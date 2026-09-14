@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR PC Building Simulator</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --ar-cyan: #00f3ff;
+            --ar-green: #00ff66;
+            --ar-red: #ff003c;
+            --ar-bg: rgba(0, 10, 20, 0.85);
+            --panel-bg: rgba(0, 20, 40, 0.9);
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000;
+            font-family: 'Chakra Petch', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #ar-viewport {
+            width: 100%; height: 100%;
+            background: #0a0a0a;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none; z-index: 5;
+        }
+
+        #ar-hud {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+            box-shadow: inset 0 0 100px rgba(0, 243, 255, 0.2);
+            border: 2px solid rgba(0, 243, 255, 0.1);
+        }
+
+        .hud-corner { position: absolute; width: 40px; height: 40px; border: 4px solid var(--ar-cyan); }
+        .tl { top: 15px; left: 15px; border-right: none; border-bottom: none; }
+        .tr { top: 15px; right: 15px; border-left: none; border-bottom: none; }
+        .bl { bottom: 15px; left: 15px; border-right: none; border-top: none; }
+        .br { bottom: 15px; right: 15px; border-left: none; border-top: none; }
+
+        .mission-panel {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: var(--panel-bg); color: var(--ar-cyan);
+            padding: 10px 25px; border: 1px solid var(--ar-cyan); border-radius: 5px;
+            font-weight: bold; font-size: 1.1rem; text-align: center;
+            box-shadow: 0 0 10px var(--ar-cyan);
+            white-space: nowrap;
+        }
+
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 20;
+        }
+        .screen.active { display: flex; }
+
+        .game-panel {
+            background: var(--panel-bg);
+            border: 2px solid var(--ar-cyan);
+            border-radius: 10px;
+            padding: 20px; width: 95%; max-width: 900px;
+            max-height: 90vh; overflow-y: auto;
+            color: white; box-shadow: 0 0 30px rgba(0, 243, 255, 0.3);
+            display: flex; flex-direction: column;
+        }
+
+        h2.panel-title {
+            color: var(--ar-cyan); margin-top: 0; border-bottom: 1px solid var(--ar-cyan);
+            padding-bottom: 10px; text-transform: uppercase; letter-spacing: 2px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .btn {
+            background: rgba(0, 243, 255, 0.1); color: var(--ar-cyan);
+            border: 1px solid var(--ar-cyan); padding: 15px 25px;
+            font-family: 'Chakra Petch', sans-serif; font-size: 1.2rem;
+            cursor: pointer; transition: 0.3s; border-radius: 4px;
+            text-transform: uppercase; font-weight: bold;
+            display: inline-flex; justify-content: center; align-items: center; gap: 8px;
+        }
+        .btn:hover { background: var(--ar-cyan); color: #000; box-shadow: 0 0 15px var(--ar-cyan); }
+        .btn:disabled { border-color: #555; color: #555; background: transparent; cursor: not-allowed; }
+
+        .config-list { overflow-y: auto; height: 500px; padding-right: 10px; }
+        .config-row { margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        .config-row label { display: block; color: var(--ar-cyan); font-weight: bold; margin-bottom: 15px; font-size: 1.2rem;}
+        .config-options { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: thin; }
+        
+        .config-card { 
+            background: #111; border: 2px solid #444; border-radius: 8px; padding: 15px; 
+            min-width: 160px; cursor: pointer; text-align: center; transition: 0.2s; 
+        }
+        .config-card:hover { border-color: #888; }
+        .config-card.selected { border-color: var(--ar-green); background: rgba(0,255,102,0.1); box-shadow: 0 0 15px rgba(0,255,102,0.3); }
+        
+        .config-icon { display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 10px; background: #000; border-radius: 5px; padding: 5px;}
+        .config-name { font-size: 1rem; font-weight: bold; margin-top: 8px; pointer-events: none; }
+        .config-desc { font-size: 0.85rem; color: #aaa; pointer-events: none; }
+
+        /* SVG Rendering styles */
+        .svg-asset { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; pointer-events: none; }
+        .svg-asset svg { max-width: 100%; max-height: 100%; drop-shadow: 0 4px 6px rgba(0,0,0,0.5); }
+
+        .interactive-area {
+            position: relative; width: 100%; height: 500px;
+            background: #111; border: 1px solid #444; border-radius: 5px;
+            margin: 15px 0; overflow: hidden; display: flex; justify-content: center; align-items: center;
+        }
+        
+        .mobo-board { width: 400px; height: 480px; background: #1a1a1a; border: 2px solid #333; position: relative; }
+        .pc-case { width: 420px; height: 500px; border: 4px solid #444; background: #0a0a0a; position: relative; }
+        
+        .dropzone {
+            position: absolute; border: 2px dashed #555; background: rgba(255,255,255,0.05);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 1rem; color: #777; text-align: center; overflow: hidden;
+            transition: 0.2s;
+        }
+        .dropzone.highlight { border-color: var(--ar-green); background: rgba(0, 255, 102, 0.2); }
+        .dropzone.filled { border-color: var(--ar-cyan); border-style: solid; background: transparent; padding: 2px; }
+        .dropzone svg { width: 100%; height: 100%; pointer-events: none; } 
+
+        /* Specific Zones Dimensions */
+        #zone-cpu { top: 70px; left: 130px; width: 90px; height: 90px; }
+        #zone-ram-a1 { top: 50px; right: 100px; width: 25px; height: 180px; }
+        #zone-ram-a2 { top: 50px; right: 70px; width: 25px; height: 180px; }
+        #zone-ram-b1 { top: 50px; right: 40px; width: 25px; height: 180px; }
+        #zone-ram-b2 { top: 50px; right: 10px; width: 25px; height: 180px; }
+        #zone-m2 { top: 260px; left: 70px; width: 130px; height: 35px; }
+        #zone-gpu-slot { top: 320px; left: 40px; width: 260px; height: 30px; }
+
+        #zone-io { top: 50px; left: 0; width: 25px; height: 140px; }
+        #zone-standoff { top: 30px; left: 35px; width: 260px; height: 320px; }
+        #zone-psu { bottom: 0; left: 0; width: 100%; height: 100px; }
+        #zone-gpu-case { top: 190px; left: 25px; width: 320px; height: 50px; }
+
+        .inventory {
+            display: flex; gap: 15px; overflow-x: auto; padding: 15px 0;
+            border-top: 1px solid #444; margin-top: 10px;
+            touch-action: pan-x; 
+        }
+        .tool-item {
+            min-width: 120px; height: 150px; background: #222; border: 1px solid #555;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            border-radius: 5px; cursor: grab; transition: 0.2s; text-align: center; padding: 8px; gap: 6px;
+            user-select: none; -webkit-user-select: none;
+            touch-action: none; 
+        }
+        .tool-item:active { cursor: grabbing; border-color: var(--ar-cyan); }
+        .tool-item.used { opacity: 0.3; pointer-events: none; }
+        
+        .tool-icon { display: flex; justify-content: center; align-items: center; height: 80px; margin-bottom: 2px; overflow: hidden; background: #000; border-radius: 5px; width: 100%;}
+        
+        .tool-name { font-size: 1rem; font-weight: bold; color: white; line-height: 1.2; pointer-events: none; }
+        .tool-desc-th { font-size: 0.85rem; color: var(--ar-cyan); line-height: 1; pointer-events: none; }
+
+        #drag-ghost {
+            position: fixed; pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%); opacity: 0.9;
+            filter: drop-shadow(0 0 15px var(--ar-cyan));
+            width: 100px; height: 100px;
+        }
+
+        #alert-modal {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-box {
+            background: #111; padding: 30px; border-radius: 5px; width: 85%; max-width: 450px; text-align: center;
+            border: 2px solid var(--ar-red); box-shadow: 0 0 30px rgba(255, 0, 60, 0.4);
+        }
+        .modal-title { font-size: 1.8rem; margin-bottom: 15px; font-weight: bold; color: var(--ar-red); text-transform: uppercase;}
+        .modal-desc { margin-bottom: 25px; font-size: 1.1rem; color: #ddd; }
+
+        #bios-screen { background: #0000aa; color: white; font-family: 'Share Tech Mono', monospace; padding: 30px; justify-content: flex-start; align-items: flex-start;}
+        .bios-header { border-bottom: 2px solid white; width: 100%; padding-bottom: 10px; margin-bottom: 20px; font-size: 1.5rem; }
+
+        @media (max-width: 768px) {
+            .game-panel { width: 98%; padding: 10px; }
+            .mission-panel { font-size: 0.9rem; padding: 8px 15px; width: 85%; white-space: normal; }
+            .tool-item { min-width: 100px; height: 130px; }
+            .tool-name { font-size: 0.9rem; }
+            .tool-desc-th { font-size: 0.8rem; }
+            .interactive-area { height: 400px; }
+            .mobo-board { transform: scale(0.8); }
+            .pc-case { transform: scale(0.8); }
+            .config-card { min-width: 140px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="ar-viewport">
+        <div class="scanlines"></div>
+        <div id="ar-hud">
+            <div class="hud-corner tl"></div><div class="hud-corner tr"></div>
+            <div class="hud-corner bl"></div><div class="hud-corner br"></div>
+            <div id="mission-text" class="mission-panel">SYSTEM INITIALIZED</div>
+        </div>
+
+        <div id="phase1" class="screen active">
+            <div class="game-panel">
+                <h2 class="panel-title"><span>📝 Phase 1: Planning</span> <span>[1/5]</span></h2>
+                <p style="color:#aaa; font-size:1rem;">เลือกอุปกรณ์ทั้ง 10 ชิ้นให้ <span style="color:var(--ar-green)">เข้ากันได้ (Compatibility)</span></p>
+                
+                <div class="config-list">
+                    <!-- CPU -->
+                    <div class="config-row">
+                        <label>1. CPU (ซีพียู)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('cpu', 'am5', 'cpu_am5', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="cpu_am5"></div></div>
+                                <div class="config-name">AMD Ryzen 5 7600</div>
+                                <div class="config-desc">Socket AM5</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('cpu', 'lga1700', 'cpu_lga1700', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="cpu_lga1700"></div></div>
+                                <div class="config-name">Intel Core i5 13400F</div>
+                                <div class="config-desc">Socket LGA1700</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Motherboard -->
+                    <div class="config-row">
+                        <label>2. Mainboard (เมนบอร์ด)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('mobo', 'am5', 'mobo_am5', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="mobo_am5"></div></div>
+                                <div class="config-name">Asus ROG Strix B650</div>
+                                <div class="config-desc">AM5 / DDR5</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('mobo', 'lga1700', 'mobo_lga1700', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="mobo_lga1700"></div></div>
+                                <div class="config-name">Gigabyte AORUS B760</div>
+                                <div class="config-desc">LGA1700 / DDR4</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- RAM -->
+                    <div class="config-row">
+                        <label>3. RAM (แรม)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('ram', 'ddr4', 'ram_ddr4', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="ram_ddr4"></div></div>
+                                <div class="config-name">16GB (8x2) DDR4</div>
+                                <div class="config-desc">3200MHz</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('ram', 'ddr5', 'ram_ddr5', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="ram_ddr5"></div></div>
+                                <div class="config-name">32GB (16x2) DDR5</div>
+                                <div class="config-desc">6000MHz</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- GPU -->
+                    <div class="config-row">
+                        <label>4. GPU (การ์ดจอ)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('gpu', 'rtx4060', 'gpu_rtx4060', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="gpu_rtx4060"></div></div>
+                                <div class="config-name">NVIDIA RTX 4060</div>
+                                <div class="config-desc">8GB GDDR6</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('gpu', 'rx7600', 'gpu_rx7600', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="gpu_rx7600"></div></div>
+                                <div class="config-name">AMD RX 7600</div>
+                                <div class="config-desc">8GB GDDR6</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SSD -->
+                    <div class="config-row">
+                        <label>5. SSD (เอสเอสดี)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('ssd', '1tb', 'ssd_1tb', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="ssd_1tb"></div></div>
+                                <div class="config-name">1TB M.2 NVMe</div>
+                                <div class="config-desc">PCIe 4.0</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('ssd', '500gb', 'ssd_500gb', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="ssd_500gb"></div></div>
+                                <div class="config-name">500GB M.2 NVMe</div>
+                                <div class="config-desc">PCIe 3.0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- HDD -->
+                    <div class="config-row">
+                        <label>6. HDD (ฮาร์ดดิสก์)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('hdd', '2tb', 'hdd_2tb', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="hdd_2tb"></div></div>
+                                <div class="config-name">2TB SATA</div>
+                                <div class="config-desc">7200 RPM</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- PSU -->
+                    <div class="config-row">
+                        <label>7. PSU (พาวเวอร์ซัพพลาย)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('psu', '650w', 'psu_650w', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="psu_650w"></div></div>
+                                <div class="config-name">650W</div>
+                                <div class="config-desc">80+ Bronze</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('psu', '850w', 'psu_850w', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="psu_850w"></div></div>
+                                <div class="config-name">850W</div>
+                                <div class="config-desc">80+ Gold</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Case -->
+                    <div class="config-row">
+                        <label>8. Case (เคส)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('case', 'atx', 'case_atx', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="case_atx"></div></div>
+                                <div class="config-name">ATX Mid-Tower</div>
+                                <div class="config-desc">Tempered Glass</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Cooler -->
+                    <div class="config-row">
+                        <label>9. CPU Cooler (ชุดระบายความร้อน)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('cooler', 'air', 'cooler_air', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="cooler_air"></div></div>
+                                <div class="config-name">Air Cooler</div>
+                                <div class="config-desc">120mm Fan</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('cooler', 'liquid', 'cooler_liquid', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="cooler_liquid"></div></div>
+                                <div class="config-name">Liquid Cooler</div>
+                                <div class="config-desc">240mm AIO</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Monitor -->
+                    <div class="config-row">
+                        <label>10. Monitor (จอภาพ)</label>
+                        <div class="config-options">
+                            <div class="config-card" onclick="selectConfig('monitor', '24in', 'monitor_24', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="monitor_24"></div></div>
+                                <div class="config-name">24" 1080p</div>
+                                <div class="config-desc">144Hz IPS</div>
+                            </div>
+                            <div class="config-card" onclick="selectConfig('monitor', '27in', 'monitor_27', this)">
+                                <div class="config-icon"><div class="svg-asset" data-svg="monitor_27"></div></div>
+                                <div class="config-name">27" 1440p</div>
+                                <div class="config-desc">165Hz IPS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn" onclick="checkCompatibility()" style="width:100%; margin-top:20px;">Verify System &gt;&gt;</button>
+            </div>
+        </div>
+
+        <div id="phase2" class="screen">
+            <div class="game-panel">
+                <h2 class="panel-title"><span>🔧 Phase 2: Motherboard</span> <span>[2/5]</span></h2>
+                <p style="color:#aaa; font-size:0.9rem;">ลากอุปกรณ์ไปวางบนบอร์ด (ต้องใส่ RAM ช่อง A2, B2 ก่อน)</p>
+                
+                <div class="interactive-area">
+                    <div class="mobo-board">
+                        <div id="zone-cpu" class="dropzone">CPU Socket</div>
+                        <div id="zone-ram-a1" class="dropzone">A1</div>
+                        <div id="zone-ram-a2" class="dropzone">A2*</div>
+                        <div id="zone-ram-b1" class="dropzone">B1</div>
+                        <div id="zone-ram-b2" class="dropzone">B2*</div>
+                        <div id="zone-m2" class="dropzone">M.2 Slot</div>
+                        <div id="zone-gpu-slot" class="dropzone" style="border-color:#333; background: #222;">PCIe x16</div>
+                    </div>
+                </div>
+
+                <div class="inventory">
+                    <div class="tool-item" id="tool-cpu">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-cpu" data-svg=""></div></div>
+                        <div class="tool-name">CPU</div><div class="tool-desc-th">(ซีพียู)</div>
+                    </div>
+                    <div class="tool-item" id="tool-paste">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="paste"></div></div>
+                        <div class="tool-name">Paste</div><div class="tool-desc-th">(ซิลิโคน)</div>
+                    </div>
+                    <div class="tool-item" id="tool-cooler">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-cooler" data-svg=""></div></div>
+                        <div class="tool-name">Cooler</div><div class="tool-desc-th">(ชุดระบายความร้อน)</div>
+                    </div>
+                    <div class="tool-item" id="tool-ram1">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-ram1" data-svg=""></div></div>
+                        <div class="tool-name">RAM 1</div><div class="tool-desc-th">(แรม 1)</div>
+                    </div>
+                    <div class="tool-item" id="tool-ram2">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-ram2" data-svg=""></div></div>
+                        <div class="tool-name">RAM 2</div><div class="tool-desc-th">(แรม 2)</div>
+                    </div>
+                    <div class="tool-item" id="tool-m2">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-m2" data-svg=""></div></div>
+                        <div class="tool-name">M.2 SSD</div><div class="tool-desc-th">(หน่วยความจำ)</div>
+                    </div>
+                </div>
+                <button class="btn" id="btn-next-p2" onclick="startPhase3()" disabled style="width:100%; margin-top:10px;">Next Phase &gt;&gt;</button>
+            </div>
+        </div>
+
+        <div id="phase3" class="screen">
+            <div class="game-panel">
+                <h2 class="panel-title"><span>📦 Phase 3: Case Build</span> <span>[3/5]</span></h2>
+                <p style="color:#aaa; font-size:0.9rem;">ลากอุปกรณ์ประกอบลงเคส (อย่าลืมแผง I/O และน็อตรองบอร์ดก่อน!)</p>
+                
+                <div class="interactive-area">
+                    <div class="pc-case">
+                        <div id="zone-io" class="dropzone">I/O</div>
+                        <div id="zone-standoff" class="dropzone">Standoffs Area</div>
+                        <div id="zone-gpu-case" class="dropzone">PCIe Brackets</div>
+                        <div id="zone-psu" class="dropzone">PSU Shroud</div>
+                    </div>
+                </div>
+
+                <div class="inventory">
+                    <div class="tool-item" id="tool-io">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="io"></div></div>
+                        <div class="tool-name">I/O Shield</div><div class="tool-desc-th">(แผงปิดพอร์ต)</div>
+                    </div>
+                    <div class="tool-item" id="tool-standoff">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="standoff"></div></div>
+                        <div class="tool-name">Standoffs</div><div class="tool-desc-th">(น็อตรองบอร์ด)</div>
+                    </div>
+                    <div class="tool-item" id="tool-mobo">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-mobo" data-svg=""></div></div>
+                        <div class="tool-name">Mainboard</div><div class="tool-desc-th">(เมนบอร์ด)</div>
+                    </div>
+                    <div class="tool-item" id="tool-psu">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-psu" data-svg=""></div></div>
+                        <div class="tool-name">PSU</div><div class="tool-desc-th">(พาวเวอร์ซัพพลาย)</div>
+                    </div>
+                    <div class="tool-item" id="tool-gpu">
+                        <div class="tool-icon"><div class="svg-asset" id="icon-tool-gpu" data-svg=""></div></div>
+                        <div class="tool-name">GPU</div><div class="tool-desc-th">(การ์ดจอ)</div>
+                    </div>
+                </div>
+                <button class="btn" id="btn-next-p3" onclick="startPhase4()" disabled style="width:100%; margin-top:10px;">Next Phase &gt;&gt;</button>
+            </div>
+        </div>
+
+        <div id="phase4" class="screen">
+            <div class="game-panel">
+                <h2 class="panel-title"><span>🔌 Phase 4: Wiring</span> <span>[4/5]</span></h2>
+                <p style="color:#aaa; font-size:0.9rem;">ลากหัวปลั๊กไฟไปเสียบที่พอร์ตบนบอร์ดและการ์ดจอ</p>
+                
+                <div class="interactive-area">
+                    <div class="pc-case" style="border-color: var(--ar-cyan);">
+                        <div style="position:absolute; top:30px; left:35px; width:260px; height:320px; border:2px solid #555; background:#111;">
+                            <div id="zone-cpu-pwr" class="dropzone" style="top:10px; left:10px; width:50px; height:30px; border-color:yellow;">8-pin</div>
+                            <div id="zone-atx" class="dropzone" style="top:80px; right:10px; width:25px; height:90px; border-color:yellow;">24-pin</div>
+                            <div style="position:absolute; top:180px; left:0px; width:320px; height:50px; background:#333; display:flex; justify-content:flex-end; padding-right:20px; align-items:center;">
+                                GPU
+                                <div id="zone-gpu-pwr" class="dropzone" style="position:relative; width:60px; height:25px; border-color:yellow; margin-left:15px;">PCIe</div>
+                            </div>
+                        </div>
+                        <div style="position:absolute; bottom:0; left:0; width:100%; height:100px; background:#222; border-top:2px solid #555; display:flex; justify-content:center; align-items:center;">Power Supply Unit</div>
+                    </div>
+                </div>
+
+                <div class="inventory">
+                    <div class="tool-item" id="tool-atx">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="cable_atx"></div></div>
+                        <div class="tool-name">24-pin ATX</div><div class="tool-desc-th">(สายเมนบอร์ด)</div>
+                    </div>
+                    <div class="tool-item" id="tool-cpu-pwr">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="cable_cpu"></div></div>
+                        <div class="tool-name">8-pin CPU</div><div class="tool-desc-th">(สายซีพียู)</div>
+                    </div>
+                    <div class="tool-item" id="tool-gpu-pwr">
+                        <div class="tool-icon"><div class="svg-asset" data-svg="cable_gpu"></div></div>
+                        <div class="tool-name">8-pin PCIe</div><div class="tool-desc-th">(สายการ์ดจอ)</div>
+                    </div>
+                </div>
+                <button class="btn" id="btn-next-p4" onclick="startPhase5()" disabled style="width:100%; margin-top:10px;">Power On &gt;&gt;</button>
+            </div>
+        </div>
+
+        <div id="phase5" class="screen" style="background:#000;">
+            <div id="bios-screen" style="width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column;">
+                <div class="bios-header">AR-BIOS Utility - Advanced Mode</div>
+                <div id="bios-text" style="font-size: 1.2rem; line-height: 1.8; white-space: pre-line;">
+                    System Initializing...
+                </div>
+                <button id="del-btn" class="btn" style="background: red; border-color: white; color: white; margin-top: auto; align-self: center; margin-bottom: 50px; font-size:1.8rem; padding:20px 50px; display:none;" onclick="enterBIOS()">PRESS 'DEL' TO ENTER BIOS</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alert-modal">
+        <div class="modal-box">
+            <div class="modal-title" id="modal-title">ERROR</div>
+            <div class="modal-desc" id="modal-desc">Details</div>
+            <button class="btn" style="background: var(--ar-red); color: white; border: none; width:100%;" onclick="closeModal()">Acknowledge</button>
+        </div>
+    </div>
+
+    <!-- Ghost Element container -->
+    <div id="drag-ghost" style="display: none;"></div>
+
+    <script>
+        // SVG Vector Graphics Library (Generated inline to prevent hotlink issues)
+        const AR_ASSETS = {
+            'cpu_am5': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect width="100" height="100" fill="#333" rx="5"/><rect x="15" y="15" width="70" height="70" fill="#ccc" rx="5"/><circle cx="20" cy="80" r="3" fill="#ffd700"/><text x="50" y="45" font-family="sans-serif" font-size="16" font-weight="bold" fill="#333" text-anchor="middle">RYZEN</text><text x="50" y="65" font-family="sans-serif" font-size="12" fill="#555" text-anchor="middle">AM5</text></svg>`,
+            'cpu_lga1700': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect width="100" height="100" fill="#333" rx="5"/><rect x="20" y="10" width="60" height="80" fill="#ccc" rx="2"/><circle cx="25" cy="85" r="3" fill="#ffd700"/><text x="50" y="45" font-family="sans-serif" font-size="16" font-weight="bold" fill="#333" text-anchor="middle">CORE</text><text x="50" y="65" font-family="sans-serif" font-size="12" fill="#555" text-anchor="middle">LGA1700</text></svg>`,
+            'mobo_am5': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect width="100" height="100" fill="#111"/><rect x="20" y="20" width="40" height="40" fill="#333" stroke="#555"/><rect x="70" y="10" width="10" height="80" fill="#444"/><rect x="10" y="70" width="80" height="15" fill="#222" stroke="#ff003c"/><text x="50" y="50" font-family="sans-serif" font-size="10" fill="#fff" opacity="0.5">ROG B650</text></svg>`,
+            'mobo_lga1700': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect width="100" height="100" fill="#111"/><rect x="20" y="20" width="40" height="40" fill="#222" stroke="#666"/><rect x="70" y="10" width="10" height="80" fill="#333"/><rect x="10" y="70" width="80" height="15" fill="#111" stroke="#00f3ff"/><text x="50" y="50" font-family="sans-serif" font-size="10" fill="#fff" opacity="0.5">AORUS</text></svg>`,
+            'ram_ddr4': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="40" width="80" height="20" fill="#111"/><path d="M10,40 L90,40 L85,30 L15,30 Z" fill="#ff003c"/><rect x="45" y="55" width="5" height="5" fill="#000"/><text x="50" y="45" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle">DDR4</text></svg>`,
+            'ram_ddr5': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="40" width="80" height="20" fill="#111"/><path d="M10,40 L90,40 L85,30 L15,30 Z" fill="#00f3ff"/><rect x="48" y="55" width="5" height="5" fill="#000"/><text x="50" y="45" font-family="sans-serif" font-size="10" fill="#111" text-anchor="middle">DDR5</text></svg>`,
+            'gpu_rtx4060': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="5" y="30" width="90" height="40" fill="#222" rx="5"/><circle cx="30" cy="50" r="15" fill="#111" stroke="#00ff66" stroke-width="2"/><circle cx="70" cy="50" r="15" fill="#111" stroke="#00ff66" stroke-width="2"/><text x="50" y="25" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle">GEFORCE RTX</text></svg>`,
+            'gpu_rx7600': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="5" y="35" width="90" height="30" fill="#222" rx="2"/><circle cx="25" cy="50" r="12" fill="#111" stroke="#ff003c" stroke-width="2"/><circle cx="50" cy="50" r="12" fill="#111" stroke="#ff003c" stroke-width="2"/><circle cx="75" cy="50" r="12" fill="#111" stroke="#ff003c" stroke-width="2"/><text x="50" y="28" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle">RADEON RX</text></svg>`,
+            'ssd_1tb': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="20" y="40" width="60" height="20" fill="#222"/><rect x="25" y="42" width="15" height="16" fill="#111"/><rect x="45" y="42" width="15" height="16" fill="#111"/><rect x="65" y="42" width="10" height="16" fill="#111"/><text x="50" y="35" font-family="sans-serif" font-size="10" fill="#00f3ff" text-anchor="middle">1TB NVMe</text></svg>`,
+            'ssd_500gb': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="20" y="40" width="60" height="20" fill="#222"/><rect x="30" y="42" width="15" height="16" fill="#111"/><rect x="55" y="42" width="15" height="16" fill="#111"/><text x="50" y="35" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle">500GB NVMe</text></svg>`,
+            'hdd_2tb': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="15" y="10" width="70" height="80" fill="#ccc" rx="5"/><circle cx="50" cy="50" r="30" fill="#eee" stroke="#999"/><circle cx="50" cy="50" r="10" fill="#bbb"/><path d="M80,80 L60,60" stroke="#777" stroke-width="3"/><text x="50" y="25" font-family="sans-serif" font-size="8" fill="#333" text-anchor="middle">2TB HDD</text></svg>`,
+            'psu_650w': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="10" width="80" height="80" fill="#222" rx="2"/><circle cx="50" cy="50" r="35" fill="#111" stroke="#444"/><line x1="50" y1="15" x2="50" y2="85" stroke="#444"/><line x1="15" y1="50" x2="85" y2="50" stroke="#444"/><text x="25" y="25" font-family="sans-serif" font-size="12" fill="#ff7f50" font-weight="bold">650W</text></svg>`,
+            'psu_850w': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="10" width="80" height="80" fill="#222" rx="2"/><circle cx="50" cy="50" r="35" fill="#111" stroke="#555"/><line x1="50" y1="15" x2="50" y2="85" stroke="#555"/><line x1="15" y1="50" x2="85" y2="50" stroke="#555"/><text x="25" y="25" font-family="sans-serif" font-size="12" fill="#ffd700" font-weight="bold">850W</text></svg>`,
+            'case_atx': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="25" y="5" width="50" height="90" fill="#111" stroke="#555" rx="3"/><rect x="30" y="10" width="40" height="70" fill="#000" stroke="#00f3ff"/><circle cx="50" cy="25" r="10" fill="#222"/><circle cx="50" cy="45" r="10" fill="#222"/><circle cx="50" cy="65" r="10" fill="#222"/></svg>`,
+            'cooler_air': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="20" y="10" width="60" height="80" fill="#aaa"/><line x1="30" y1="10" x2="30" y2="90" stroke="#888" stroke-width="2"/><line x1="40" y1="10" x2="40" y2="90" stroke="#888" stroke-width="2"/><line x1="50" y1="10" x2="50" y2="90" stroke="#888" stroke-width="2"/><line x1="60" y1="10" x2="60" y2="90" stroke="#888" stroke-width="2"/><line x1="70" y1="10" x2="70" y2="90" stroke="#888" stroke-width="2"/><circle cx="50" cy="50" r="25" fill="#222"/><circle cx="50" cy="50" r="5" fill="#ccc"/></svg>`,
+            'cooler_liquid': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="10" width="20" height="80" fill="#222"/><circle cx="20" cy="30" r="8" fill="#111"/><circle cx="20" cy="70" r="8" fill="#111"/><circle cx="80" cy="50" r="15" fill="#111" stroke="#00f3ff" stroke-width="3"/><path d="M 30 30 C 60 30, 60 45, 75 45" stroke="#333" stroke-width="4" fill="none"/><path d="M 30 70 C 60 70, 60 55, 75 55" stroke="#333" stroke-width="4" fill="none"/></svg>`,
+            'monitor_24': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="5" y="15" width="90" height="60" fill="#222" rx="3"/><rect x="10" y="20" width="80" height="50" fill="#000"/><path d="M 45 75 L 55 75 L 60 90 L 40 90 Z" fill="#333"/><text x="50" y="45" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle">24"</text></svg>`,
+            'monitor_27': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="2" y="10" width="96" height="65" fill="#222" rx="2"/><rect x="5" y="13" width="90" height="58" fill="#000"/><path d="M 45 75 L 55 75 L 60 90 L 40 90 Z" fill="#333"/><text x="50" y="45" font-family="sans-serif" font-size="12" fill="#00f3ff" text-anchor="middle">27"</text></svg>`,
+            'paste': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="45" width="60" height="10" fill="#ccc"/><rect x="70" y="47" width="10" height="6" fill="#999"/><rect x="80" y="49" width="10" height="2" fill="#fff"/><rect x="5" y="40" width="5" height="20" fill="#555"/></svg>`,
+            'standoff': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><circle cx="50" cy="40" r="15" fill="#d4af37"/><rect x="45" y="40" width="10" height="30" fill="#d4af37"/><line x1="45" y1="50" x2="55" y2="50" stroke="#b8860b"/><line x1="45" y1="60" x2="55" y2="60" stroke="#b8860b"/></svg>`,
+            'io': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="10" y="10" width="20" height="80" fill="#silver"/><rect x="15" y="20" width="10" height="10" fill="#333"/><rect x="15" y="40" width="10" height="15" fill="#333"/><circle cx="20" cy="70" r="3" fill="#ff0000"/><circle cx="20" cy="80" r="3" fill="#00ff00"/></svg>`,
+            'cable_atx': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="20" y="20" width="60" height="40" fill="#111"/><rect x="25" y="25" width="10" height="10" fill="#fff"/><rect x="40" y="25" width="10" height="10" fill="#fff"/><rect x="55" y="25" width="10" height="10" fill="#fff"/><rect x="70" y="25" width="10" height="10" fill="#fff"/><rect x="25" y="40" width="10" height="10" fill="#fff"/><rect x="40" y="40" width="10" height="10" fill="#fff"/><rect x="55" y="40" width="10" height="10" fill="#fff"/><rect x="70" y="40" width="10" height="10" fill="#fff"/><path d="M 50 60 C 50 90, 50 90, 50 100" stroke="#333" stroke-width="20" fill="none"/></svg>`,
+            'cable_cpu': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="30" y="30" width="40" height="20" fill="#111"/><rect x="35" y="35" width="8" height="10" fill="#fff"/><rect x="45" y="35" width="8" height="10" fill="#fff"/><rect x="55" y="35" width="8" height="10" fill="#fff"/><path d="M 50 50 C 50 80, 50 80, 50 100" stroke="#333" stroke-width="15" fill="none"/></svg>`,
+            'cable_gpu': `<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><rect x="30" y="30" width="40" height="20" fill="#111" stroke="#ff003c"/><rect x="35" y="35" width="8" height="10" fill="#fff"/><rect x="45" y="35" width="8" height="10" fill="#fff"/><rect x="55" y="35" width="8" height="10" fill="#fff"/><path d="M 50 50 C 50 80, 50 80, 50 100" stroke="#333" stroke-width="15" fill="none"/></svg>`
+        };
+
+        let p2State = { cpu: false, paste: false, cooler: false, ram1: false, ram2: false, m2: false };
+        let p3State = { io: false, standoff: false, mobo: false, psu: false, gpu: false };
+        let p4State = { atx: false, cpu_pwr: false, gpu_pwr: false };
+
+        let selectedConfig = { cpu: null, mobo: null, ram: null, gpu: null, ssd: null, hdd: null, psu: null, case: null, cooler: null, monitor: null };
+        let selectedImages = {}; 
+
+        window.onload = () => {
+            // Render SVGs on load
+            document.querySelectorAll('.svg-asset').forEach(el => {
+                const key = el.getAttribute('data-svg');
+                if(AR_ASSETS[key]) {
+                    el.innerHTML = AR_ASSETS[key];
+                }
+            });
+
+            const tools = document.querySelectorAll('.tool-item');
+            tools.forEach(tool => {
+                tool.addEventListener('mousedown', handleDragStart);
+                tool.addEventListener('touchstart', handleDragStart, { passive: false });
+            });
+        };
+
+        function selectConfig(category, value, svgKey, element) {
+            selectedConfig[category] = value;
+            selectedImages[category] = svgKey; 
+            const siblings = element.parentElement.querySelectorAll('.config-card');
+            siblings.forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+        }
+
+        function setMission(text) { document.getElementById('mission-text').innerText = text; }
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+        function showModal(title, desc, isSuccess = false) {
+            const modal = document.getElementById('alert-modal');
+            const titleEl = document.getElementById('modal-title');
+            titleEl.innerText = title;
+            titleEl.style.color = isSuccess ? 'var(--ar-green)' : 'var(--ar-red)';
+            document.getElementById('modal-desc').innerHTML = desc;
+            modal.style.display = 'flex';
+        }
+        function closeModal() { document.getElementById('alert-modal').style.display = 'none'; }
+        function failGame(reason) {
+            showModal("SYSTEM FAILURE", reason + "<br><br>บอร์ดพัง หรือ ลูกค้าด่า! เริ่มใหม่ตั้งแต่ต้น", false);
+            setTimeout(() => { location.reload(); }, 4000);
+        }
+
+        let draggedTool = null;
+        let ghostEl = document.getElementById('drag-ghost');
+
+        function handleDragStart(e) {
+            if(this.classList.contains('used')) return;
+            if (e.type === 'touchstart') e.preventDefault(); 
+            draggedTool = this;
+            
+            // Set up Ghost element with SVG
+            const svgContent = this.querySelector('.svg-asset').innerHTML;
+            ghostEl.innerHTML = svgContent;
+            ghostEl.style.display = 'block';
+            updateGhostPosition(e);
+
+            document.addEventListener('mousemove', handleDragMove);
+            document.addEventListener('touchmove', handleDragMove, { passive: false });
+            document.addEventListener('mouseup', handleDragEnd);
+            document.addEventListener('touchend', handleDragEnd);
+        }
+
+        function handleDragMove(e) {
+            if (e.type === 'touchmove') e.preventDefault();
+            updateGhostPosition(e);
+        }
+
+        function updateGhostPosition(e) {
+            let clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            let clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            ghostEl.style.left = clientX + 'px';
+            ghostEl.style.top = clientY + 'px';
+        }
+
+        function handleDragEnd(e) {
+            document.removeEventListener('mousemove', handleDragMove);
+            document.removeEventListener('touchmove', handleDragMove);
+            document.removeEventListener('mouseup', handleDragEnd);
+            document.removeEventListener('touchend', handleDragEnd);
+            
+            ghostEl.style.display = 'none';
+
+            let clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
+            let clientY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
+
+            let target = document.elementFromPoint(clientX, clientY);
+            if(target) {
+                let dropzone = target.closest('.dropzone');
+                if(dropzone) processDrop(draggedTool, dropzone);
+            }
+            draggedTool = null;
+        }
+
+        function processDrop(toolElement, dropzone) {
+            const toolId = toolElement.id.replace('tool-', '');
+            const zoneId = dropzone.id;
+
+            // Phase 2 Rules
+            if (toolId === 'cpu' && zoneId === 'zone-cpu') {
+                p2State.cpu = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'paste' && zoneId === 'zone-cpu') {
+                if(!p2State.cpu) { failGame("ทาซิลิโคนลงบน Socket เปล่าๆ! บอร์ดพังพินาศ!"); return; }
+                p2State.paste = true; 
+                dropzone.innerHTML += '<div style="position:absolute; width:20px; height:20px; background:#fff; border-radius:50%; z-index:2; box-shadow: 0 0 5px #fff;"></div>';
+                toolElement.classList.add('used');
+            } else if (toolId === 'cooler' && zoneId === 'zone-cpu') {
+                if(!p2State.cpu) return;
+                if(!p2State.paste) { failGame("คุณใส่ซิงค์โดยไม่ทาซิลิโคน! เปิดเครื่องมา CPU ร้อนทะลุ 100 องศาแน่นอน!"); return; }
+                p2State.cooler = true; 
+                placeImg(toolElement, dropzone); 
+            } else if ((toolId === 'ram1' || toolId === 'ram2') && zoneId.startsWith('zone-ram')) {
+                if (zoneId === 'zone-ram-a1' || zoneId === 'zone-ram-b1') {
+                    showModal("WARNING", "เพื่อประสิทธิภาพสูงสุด (Dual Channel) คู่มือบอร์ดแนะนำให้ใส่ช่อง A2 และ B2 ก่อนเสมอครับ!");
+                    return;
+                }
+                if (zoneId === 'zone-ram-a2') { p2State.ram1 = true; placeImg(toolElement, dropzone); }
+                if (zoneId === 'zone-ram-b2') { p2State.ram2 = true; placeImg(toolElement, dropzone); }
+            } else if (toolId === 'm2' && zoneId === 'zone-m2') {
+                p2State.m2 = true; placeImg(toolElement, dropzone);
+            }
+
+            // Phase 3 Rules
+            else if (toolId === 'mobo' && zoneId === 'zone-standoff') {
+                if (!p3State.io) { failGame("คุณลืมใส่ I/O Shield! ต้องรื้อบอร์ดออกมาใหม่ทั้งหมด เสียเวลาไปอีก 1 ชั่วโมง!"); return; }
+                if (!p3State.standoff) { failGame("ลืมรองน็อต Standoff! บอร์ดช็อตติดกับเคสเหล็ก พังพินาศ!"); return; }
+                p3State.mobo = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'io' && zoneId === 'zone-io') {
+                p3State.io = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'standoff' && zoneId === 'zone-standoff') {
+                p3State.standoff = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'psu' && zoneId === 'zone-psu') {
+                p3State.psu = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'gpu' && zoneId === 'zone-gpu-case') {
+                if(!p3State.mobo) { showModal("ERROR", "ต้องใส่บอร์ดก่อนใส่การ์ดจอสิ!"); return; }
+                p3State.gpu = true; placeImg(toolElement, dropzone);
+            }
+
+            // Phase 4 Rules
+            else if (toolId === 'atx' && zoneId === 'zone-atx') {
+                p4State.atx = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'cpu-pwr' && zoneId === 'zone-cpu-pwr') {
+                p4State.cpu_pwr = true; placeImg(toolElement, dropzone);
+            } else if (toolId === 'gpu-pwr' && zoneId === 'zone-gpu-pwr') {
+                p4State.gpu_pwr = true; placeImg(toolElement, dropzone);
+            }
+            
+            checkCompletions();
+        }
+
+        function placeImg(toolElement, dropzone) {
+            const svgClone = toolElement.querySelector('.svg-asset').innerHTML;
+            dropzone.innerHTML = svgClone; 
+            dropzone.classList.add('filled');
+            toolElement.classList.add('used');
+        }
+
+        function checkCompletions() {
+            if (p2State.cpu && p2State.paste && p2State.cooler && p2State.ram1 && p2State.ram2 && p2State.m2) {
+                document.getElementById('btn-next-p2').disabled = false;
+                document.getElementById('btn-next-p2').style.borderColor = 'var(--ar-green)';
+            }
+            if (p3State.io && p3State.standoff && p3State.mobo && p3State.psu && p3State.gpu) {
+                document.getElementById('btn-next-p3').disabled = false;
+                document.getElementById('btn-next-p3').style.borderColor = 'var(--ar-green)';
+            }
+            if (p4State.atx && p4State.cpu_pwr && p4State.gpu_pwr) {
+                document.getElementById('btn-next-p4').disabled = false;
+                document.getElementById('btn-next-p4').style.borderColor = 'var(--ar-green)';
+            }
+        }
+
+        setMission("MISSION 1: Check Component Compatibility");
+        
+        function checkCompatibility() {
+            const required = ['cpu', 'mobo', 'ram', 'gpu', 'ssd', 'hdd', 'psu', 'case', 'cooler', 'monitor'];
+            for(let key of required) {
+                if(!selectedConfig[key]) {
+                    showModal("WARNING", "กรุณาเลือกอุปกรณ์ให้ครบทั้ง 10 ชิ้นก่อนเริ่มประกอบคอม!");
+                    return;
+                }
+            }
+
+            if (selectedConfig.cpu === 'am5' && selectedConfig.mobo !== 'am5') {
+                failGame("Socket ไม่ตรงกัน! ขา Socket งอพังยับเยิน! (CPU AM5 ต้องใช้คู่กับบอร์ด AM5)"); return;
+            }
+            if (selectedConfig.cpu === 'lga1700' && selectedConfig.mobo !== 'lga1700') {
+                failGame("Socket ไม่ตรงกัน! (CPU Intel LGA1700 ต้องใช้บอร์ด LGA1700)"); return;
+            }
+            if (selectedConfig.mobo === 'am5' && selectedConfig.ram !== 'ddr5') {
+                failGame("บอร์ด AM5 รองรับเฉพาะ RAM DDR5 เท่านั้น! ยัด DDR4 สล็อตหัก!"); return;
+            }
+            if (selectedConfig.mobo === 'lga1700' && selectedConfig.ram !== 'ddr4') {
+                failGame("บอร์ดรุ่นที่คุณเลือกรองรับเฉพาะ DDR4! ยัด DDR5 ไม่เข้า!"); return;
+            }
+
+            showModal("COMPATIBILITY OK", "อุปกรณ์ทั้ง 10 ชิ้นเข้ากันได้สมบูรณ์แบบ!", true);
+            setTimeout(() => { closeModal(); startPhase2(); }, 1500);
+        }
+
+        function renderToolSVG(id, key) {
+            const el = document.getElementById(id);
+            if(el && AR_ASSETS[key]) el.innerHTML = AR_ASSETS[key];
+        }
+
+        function startPhase2() { 
+            showScreen('phase2'); 
+            setMission("MISSION 2: Motherboard Assembly"); 
+            
+            // ดึงกราฟิกที่เลือกในด่าน 1 มาใส่ด่าน 2
+            renderToolSVG('icon-tool-cpu', selectedImages.cpu);
+            renderToolSVG('icon-tool-cooler', selectedImages.cooler);
+            renderToolSVG('icon-tool-ram1', selectedImages.ram);
+            renderToolSVG('icon-tool-ram2', selectedImages.ram);
+            renderToolSVG('icon-tool-m2', selectedImages.ssd);
+        }
+        
+        function startPhase3() { 
+            showScreen('phase3'); 
+            setMission("MISSION 3: Case Installation"); 
+            
+            // ดึงกราฟิกที่เลือกมาใช้งาน
+            renderToolSVG('icon-tool-mobo', selectedImages.mobo);
+            renderToolSVG('icon-tool-psu', selectedImages.psu);
+            renderToolSVG('icon-tool-gpu', selectedImages.gpu);
+        }
+        
+        function startPhase4() { showScreen('phase4'); setMission("MISSION 4: Cable Management"); }
+        
+        let bootTimer;
+        function startPhase5() {
+            showScreen('phase5');
+            setMission("MISSION 5: First Boot & BIOS");
+            
+            const txt = document.getElementById('bios-text');
+            txt.innerHTML = "CPU: " + (selectedConfig.cpu === 'am5' ? "AMD Ryzen 5 7600" : "Intel Core i5 13400F") + "\n";
+            setTimeout(() => { txt.innerHTML += "Memory: 32768 MB OK\n"; }, 1000);
+            setTimeout(() => { txt.innerHTML += "Storage: M.2 NVMe SSD Detected\n"; }, 2000);
+            setTimeout(() => { 
+                txt.innerHTML += "\nPress DEL to enter Setup..."; 
+                document.getElementById('del-btn').style.display = 'block';
+                
+                bootTimer = setTimeout(() => {
+                    failGame("คุณกดเข้า BIOS ไม่ทัน! ระบบไม่มี OS เครื่องค้างหน้าจอดำ!");
+                }, 4000);
+            }, 3000);
+        }
+
+        function enterBIOS() {
+            clearTimeout(bootTimer);
+            document.getElementById('del-btn').style.display = 'none';
+            document.getElementById('bios-text').innerHTML = "<span style='color:var(--ar-green);'>Entering BIOS Setup...</span>\n\nAll components detected successfully.\nTemperatures: Normal (35 C)\n\n<h2 style='color:yellow;'>🏆 ภารกิจประกอบคอมสำเร็จ!</h2><p>ยอดเยี่ยมมาก คุณประกอบคอมได้ถูกต้องตามหลักการทุกขั้นตอน!</p>";
+        }
+    </script>
+</body>
+</html>
